@@ -18,12 +18,6 @@ if not api_key:
         "OPENAI_API_KEY is not configured in the Render environment."
     )
 
-# Project structure:
-# project/
-#   app.py
-#   rag/chatbot.py
-#   sop/                 <-- SOP documents
-#
 BASE_DIR = Path(__file__).resolve().parent.parent
 SOP_DIR = BASE_DIR / "sop"
 
@@ -39,8 +33,9 @@ prompt = ChatPromptTemplate.from_template(
     """
 You are a Telecom NOC Expert.
 
-Answer the question using ONLY the supplied SOP context.
-If the SOP context does not contain enough information, say:
+Answer the user's question using ONLY the supplied SOP context.
+
+If the context does not contain enough information, say:
 "Insufficient information in the SOP documents."
 
 Keep the answer concise and practical.
@@ -57,12 +52,19 @@ parser = StrOutputParser()
 chain = prompt | llm | parser
 
 
+STOP_WORDS = {
+    "what", "is", "are", "the", "a", "an", "of", "for", "to",
+    "in", "on", "and", "or", "how", "why", "does", "do",
+    "with", "about", "can", "please", "tell", "me"
+}
+
+
 def _tokens(text):
-    return set(
-        token.lower()
-        for token in re.findall(r"[a-zA-Z0-9]+", str(text))
-        if len(token) >= 3
-    )
+    words = re.findall(r"[a-zA-Z0-9]+", str(text).lower())
+    return {
+        word for word in words
+        if len(word) >= 2 and word not in STOP_WORDS
+    }
 
 
 def _read_sop_file(path):
@@ -70,12 +72,16 @@ def _read_sop_file(path):
 
     try:
         if suffix in {".txt", ".md"}:
-            return path.read_text(encoding="utf-8", errors="ignore")
+            return path.read_text(
+                encoding="utf-8",
+                errors="ignore"
+            )
 
         if suffix == ".pdf":
             from pypdf import PdfReader
 
             reader = PdfReader(str(path))
+
             return "\n".join(
                 page.extract_text() or ""
                 for page in reader.pages
@@ -85,6 +91,7 @@ def _read_sop_file(path):
             from docx import Document
 
             document = Document(str(path))
+
             return "\n".join(
                 paragraph.text
                 for paragraph in document.paragraphs
@@ -93,103 +100,110 @@ def _read_sop_file(path):
 
     except Exception as e:
         print(
-            f"SOP: Could not read {path.name}: {e}",
-            flush=True,
+            f"SOP: Failed reading {path.name}: {e}",
+            flush=True
         )
+        traceback.print_exc()
 
     return ""
 
 
-def _load_sop_documents():
+def _load_sop_chunks():
     if not SOP_DIR.exists():
         print(
             f"SOP: Folder not found: {SOP_DIR}",
-            flush=True,
+            flush=True
         )
         return []
 
     supported = {".txt", ".md", ".pdf", ".docx"}
-    documents = []
+    chunks = []
 
     for path in SOP_DIR.rglob("*"):
-        if path.is_file() and path.suffix.lower() in supported:
-            content = _read_sop_file(path)
 
-            if content.strip():
-                documents.append({
-                    "name": path.name,
-                    "content": content,
-                })
+        if not path.is_file():
+            continue
+
+        if path.suffix.lower() not in supported:
+            continue
+
+        content = _read_sop_file(path)
+
+        if not content.strip():
+            continue
+
+        # Split each document into manageable chunks.
+        paragraphs = [
+            p.strip()
+            for p in re.split(r"\n\s*\n|\n", content)
+            if p.strip()
+        ]
+
+        current = ""
+
+        for paragraph in paragraphs:
+
+            if len(current) + len(paragraph) > 1800:
+
+                if current:
+                    chunks.append({
+                        "name": path.name,
+                        "content": current
+                    })
+
+                current = paragraph
+
+            else:
+
+                if current:
+                    current += "\n"
+
+                current += paragraph
+
+        if current:
+            chunks.append({
+                "name": path.name,
+                "content": current
+            })
 
     print(
-        f"SOP: Loaded {len(documents)} documents from {SOP_DIR}",
-        flush=True,
+        f"SOP: Loaded {len(chunks)} searchable chunks from {SOP_DIR}",
+        flush=True
     )
 
-    return documents
+    return chunks
 
 
-# Load SOP documents once at application startup.
-SOP_DOCUMENTS = _load_sop_documents()
+SOP_CHUNKS = _load_sop_chunks()
 
 
-def _find_relevant_sops(question, max_results=3):
+def _score_chunk(question, content):
+    question_lower = question.lower()
+    content_lower = content.lower()
+
     question_tokens = _tokens(question)
+    content_tokens = _tokens(content)
 
-    scored = []
+    score = 0
 
-    for document in SOP_DOCUMENTS:
-        content = document["content"]
-        content_tokens = _tokens(content)
+    # Token overlap.
+    score += len(
+        question_tokens.intersection(content_tokens)
+    ) * 3
 
-        overlap = len(
-            question_tokens.intersection(content_tokens)
-        )
+    # Exact phrase match.
+    if question_lower in content_lower:
+        score += 20
 
-        phrase_bonus = (
-            20
-            if question.lower() in content.lower()
-            else 0
-        )
+    # Individual phrase components.
+    # This helps queries such as "critical alarm" when the SOP says
+    # "critical severity" and "alarm".
+    for token in question_tokens:
 
-        score = overlap + phrase_bonus
+        if token in content_lower:
+            score += 2
 
-        if score > 0:
-            scored.append(
-                (
-                    score,
-                    document["name"],
-                    content,
-                )
-            )
-
-    scored.sort(
-        key=lambda item: item[0],
-        reverse=True,
-    )
-
-    return scored[:max_results]
-
-
-def _build_context(matches, max_chars=10000):
-    parts = []
-    total = 0
-
-    for score, name, content in matches:
-        remaining = max_chars - total
-
-        if remaining <= 0:
-            break
-
-        content = content[:remaining]
-
-        parts.append(
-            f"SOP Document: {name}\n{content}"
-        )
-
-        total += len(content)
-
-    return "\n\n---\n\n".join(parts)
+    return score
 
 
 def get_relevant_context(question):
@@ -199,70 +213,116 @@ def get_relevant_context(question):
         return ""
 
     print(
-        "SOP: Starting local SOP search...",
-        flush=True,
+        "SOP: Starting local SOP chunk search...",
+        flush=True
     )
 
     start = time.time()
 
-    matches = _find_relevant_sops(
-        question,
-        max_results=3,
+    scored = []
+
+    for item in SOP_CHUNKS:
+
+        score = _score_chunk(
+            question,
+            item["content"]
+        )
+
+        if score > 0:
+            scored.append(
+                (
+                    score,
+                    item["name"],
+                    item["content"]
+                )
+            )
+
+    scored.sort(
+        key=lambda x: x[0],
+        reverse=True
     )
 
-    elapsed = round(time.time() - start, 2)
+    selected = scored[:3]
+
+    elapsed = round(
+        time.time() - start,
+        2
+    )
 
     print(
         f"SOP: Local search completed in {elapsed}s; "
-        f"matches={len(matches)}",
-        flush=True,
+        f"matches={len(selected)}",
+        flush=True
     )
 
-    return _build_context(matches)
+    if not selected:
+        return ""
+
+    context_parts = []
+
+    for score, name, content in selected:
+
+        context_parts.append(
+            f"SOP Document: {name}\n{content[:3000]}"
+        )
+
+    return "\n\n--- SOP SECTION ---\n\n".join(
+        context_parts
+    )
 
 
 def ask_question(question):
     question = str(question).strip()
 
     if not question:
-        raise ValueError("Question cannot be empty.")
+        raise ValueError(
+            "Question cannot be empty."
+        )
 
-    context = get_relevant_context(question)
+    context = get_relevant_context(
+        question
+    )
 
     if not context:
+
         return (
-            "No relevant SOP information was found for this question."
+            "No relevant SOP information was found "
+            "for this question."
         )
 
     print(
         "SOP: Calling OpenAI GPT-4.1-mini...",
-        flush=True,
+        flush=True
     )
 
     start = time.time()
 
     try:
-        answer = chain.invoke(
-            {
-                "context": context,
-                "question": question,
-            }
-        )
 
-        elapsed = round(time.time() - start, 2)
+        answer = chain.invoke({
+            "context": context,
+            "question": question
+        })
+
+        elapsed = round(
+            time.time() - start,
+            2
+        )
 
         print(
             f"SOP: OpenAI response completed in {elapsed}s",
-            flush=True,
+            flush=True
         )
 
         return answer
 
     except Exception as e:
+
         print(
             "SOP: OpenAI LLM call FAILED:",
-            flush=True,
+            flush=True
         )
+
         traceback.print_exc()
 
         raise RuntimeError(
