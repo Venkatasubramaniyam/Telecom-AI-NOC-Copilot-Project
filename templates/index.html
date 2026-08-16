@@ -388,7 +388,7 @@
             </button>
 
             <div class="loading" id="rcaLoading">
-                Analyzing alarms...
+                Analyzing alarms... <span id="rcaTimer">0s</span>
             </div>
 
             <div id="rcaResult"></div>
@@ -663,13 +663,37 @@ async function analyzeRootCause() {
     const button =
         document.getElementById("rcaButton");
 
+    const loading =
+        document.getElementById("rcaLoading");
+
+    const timer =
+        document.getElementById("rcaTimer");
+
     button.disabled = true;
-
-    document.getElementById("rcaLoading").style.display =
-        "block";
-
+    loading.style.display = "block";
     document.getElementById("rcaResult").innerHTML = "";
 
+    let elapsed = 0;
+    timer.textContent = "0s";
+
+    const timerId = setInterval(() => {
+        elapsed += 1;
+        timer.textContent = `${elapsed}s`;
+
+        if (elapsed === 15) {
+            loading.firstChild.textContent =
+                "Retrieving telecom SOP context... ";
+        } else if (elapsed === 35) {
+            loading.firstChild.textContent =
+                "Generating AI root-cause analysis... ";
+        } else if (elapsed === 90) {
+            loading.firstChild.textContent =
+                "AI analysis is taking longer than expected... ";
+        }
+    }, 1000);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
 
     try {
 
@@ -685,7 +709,9 @@ async function analyzeRootCause() {
 
                 body: JSON.stringify({
                     severity: severity
-                })
+                }),
+
+                signal: controller.signal
             }
         );
 
@@ -698,17 +724,26 @@ async function analyzeRootCause() {
 
     } catch (error) {
 
-        showError(
-            "rcaResult",
-            error.message
-        );
+        if (error.name === "AbortError") {
+            showError(
+                "rcaResult",
+                "Root cause analysis timed out after 180 seconds. " +
+                "Please check the Render logs for the AI/OpenAI operation."
+            );
+        } else {
+            showError(
+                "rcaResult",
+                error.message
+            );
+        }
 
     } finally {
 
-        button.disabled = false;
+        clearInterval(timerId);
+        clearTimeout(timeoutId);
 
-        document.getElementById("rcaLoading").style.display =
-            "none";
+        button.disabled = false;
+        loading.style.display = "none";
     }
 }
 
