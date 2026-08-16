@@ -1,3 +1,6 @@
+import os
+import traceback
+
 from flask import Flask, render_template, request, jsonify
 from utils.load_data import load_alarm_data, load_incident_data
 from rag.chatbot import ask_question
@@ -91,7 +94,8 @@ def sop():
         answer = ask_question(question)
         return jsonify({"answer": str(answer)})
     except Exception as e:
-        print(f"SOP ERROR: {e}")
+        print("SOP ERROR:")
+        traceback.print_exc()
         return jsonify({
             "error": "Unable to process the SOP question.",
             "details": str(e)
@@ -126,7 +130,8 @@ def root_cause():
         result = analyze_root_cause(filtered_df, incident_df)
         return jsonify({"result": str(result)})
     except Exception as e:
-        print(f"ROOT CAUSE ERROR: {e}")
+        print("ROOT CAUSE ERROR:")
+        traceback.print_exc()
         return jsonify({
             "error": "Unable to perform root cause analysis.",
             "details": str(e)
@@ -134,8 +139,12 @@ def root_cause():
 
 
 if __name__ == "__main__":
+    # Render provides the PORT environment variable.
+    # Local development falls back to port 5000.
+    port = int(os.environ.get("PORT", 5000))
+
     app.run(
         host="0.0.0.0",
-        port=5000,
+        port=port,
         debug=False
     )
