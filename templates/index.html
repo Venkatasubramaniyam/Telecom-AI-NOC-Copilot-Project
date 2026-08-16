@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Telecom AI NOC Copilot</title>
+
+    <!-- Plotly for the alarm chart -->
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #172033;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0b2d4d, #1769aa);
+            color: white;
+            padding: 28px 40px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 30px;
+        }
+
+        .header p {
+            margin: 8px 0 0;
+            font-size: 15px;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 25px auto;
+            padding: 0 25px 40px;
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 15px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.15);
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #12b76a;
+        }
+
+        .kpis {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 22px;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .kpi-title {
+            font-size: 14px;
+            color: #667085;
+            margin-bottom: 8px;
+        }
+
+        .kpi-value {
+            font-size: 30px;
+            font-weight: bold;
+        }
+
+        .critical {
+            border-left: 5px solid #d92d20;
+        }
+
+        .major {
+            border-left: 5px solid #f79009;
+        }
+
+        .minor {
+            border-left: 5px solid #2e90fa;
+        }
+
+        .total {
+            border-left: 5px solid #12b76a;
+        }
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 22px;
+            margin-bottom: 25px;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .section h2 {
+            margin-top: 0;
+            color: #0b2d4d;
+        }
+
+        .section-description {
+            color: #667085;
+            margin-top: -8px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        select,
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cfd4dc;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+        }
+
+        select:focus,
+        input:focus {
+            border-color: #1769aa;
+            box-shadow: 0 0 0 3px rgba(23, 105, 170, 0.12);
+        }
+
+        button {
+            background: #1769aa;
+            color: white;
+            border: none;
+            padding: 11px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+
+        button:hover {
+            background: #12578c;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            margin-top: 18px;
+            border: 1px solid #eaecf0;
+            border-radius: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 650px;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #eaecf0;
+        }
+
+        th {
+            background: #f2f4f7;
+            font-weight: 700;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .answer {
+            margin-top: 18px;
+            padding: 16px;
+            background: #f0f9ff;
+            border-left: 4px solid #1769aa;
+            border-radius: 7px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        .error {
+            margin-top: 15px;
+            padding: 14px;
+            background: #fef3f2;
+            color: #b42318;
+            border-left: 4px solid #d92d20;
+            border-radius: 7px;
+        }
+
+        .loading {
+            display: none;
+            margin-top: 12px;
+            color: #667085;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+
+        .footer {
+            text-align: center;
+            color: #667085;
+            font-size: 13px;
+            padding: 15px;
+        }
+
+        @media (max-width: 900px) {
+            .kpis {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 550px) {
+            .kpis {
+                grid-template-columns: 1fr;
+            }
+
+            .header {
+                padding: 22px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .container {
+                padding: 0 15px 30px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header class="header">
+    <h1>📡 Telecom AI NOC Copilot</h1>
+    <p>AI-powered alarm monitoring, SOP assistance and root-cause analysis</p>
+
+    <div class="status">
+        <span class="status-dot"></span>
+        Flask Application
+    </div>
+</header>
+
+
+<main class="container">
+
+    <!-- KPI CARDS -->
+    <section class="kpis">
+
+        <div class="card critical">
+            <div class="kpi-title">Critical Alarms</div>
+            <div class="kpi-value" id="critical">-</div>
+        </div>
+
+        <div class="card major">
+            <div class="kpi-title">Major Alarms</div>
+            <div class="kpi-value" id="major">-</div>
+        </div>
+
+        <div class="card minor">
+            <div class="kpi-title">Minor Alarms</div>
+            <div class="kpi-value" id="minor">-</div>
+        </div>
+
+        <div class="card total">
+            <div class="kpi-title">Total Alarms</div>
+            <div class="kpi-value" id="total">-</div>
+        </div>
+
+    </section>
+
+
+    <!-- ALARM MONITORING -->
+    <section class="section">
+
+        <h2>🚨 Alarm Monitoring</h2>
+        <p class="section-description">
+            Monitor telecom alarms and filter them by severity.
+        </p>
+
+        <label for="severity">Filter by Severity</label>
+
+        <select id="severity" onchange="loadAlarms()">
+            <option value="All">All</option>
+            <option value="Critical">Critical</option>
+            <option value="Major">Major</option>
+            <option value="Minor">Minor</option>
+        </select>
+
+        <div id="alarmError"></div>
+
+        <div class="table-wrapper">
+            <table>
+                <thead id="tableHead"></thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+
+    </section>
+
+
+    <!-- CHART -->
+    <section class="section">
+
+        <h2>📊 Alarm Severity Distribution</h2>
+
+        <div id="severityChart"></div>
+
+    </section>
+
+
+    <!-- AI FEATURES -->
+    <div class="grid-2">
+
+        <!-- SOP -->
+        <section class="section">
+
+            <h2>🤖 AI Telecom Assistant</h2>
+
+            <p class="section-description">
+                Ask questions about Telecom SOPs and retrieve
+                knowledge-grounded answers.
+            </p>
+
+            <input
+                type="text"
+                id="question"
+                placeholder="Example: What is the procedure for a critical alarm?"
+                onkeydown="if(event.key === 'Enter') askSOP()"
+            >
+
+            <button id="sopButton" onclick="askSOP()">
+                Search SOP
+            </button>
+
+            <div class="loading" id="sopLoading">
+                Searching SOP knowledge base...
+            </div>
+
+            <div id="sopResult"></div>
+
+        </section>
+
+
+        <!-- RCA -->
+        <section class="section">
+
+            <h2>🧠 AI Root Cause Analysis</h2>
+
+            <p class="section-description">
+                Analyze the selected alarms using the AI root-cause engine.
+            </p>
+
+            <button id="rcaButton" onclick="analyzeRootCause()">
+                Analyze Current Alarms
+            </button>
+
+            <div class="loading" id="rcaLoading">
+                Analyzing alarms...
+            </div>
+
+            <div id="rcaResult"></div>
+
+        </section>
+
+    </div>
+
+</main>
+
+
+<footer class="footer">
+    Telecom AI NOC Copilot | Flask + AI + RAG
+</footer>
+
+
+<script>
+
+async function loadAlarms() {
+
+    const severity = document.getElementById("severity").value;
+
+    document.getElementById("alarmError").innerHTML = "";
+
+    try {
+
+        const response = await fetch(
+            "/api/alarms?severity=" +
+            encodeURIComponent(severity),
+            {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json"
+                }
+            }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Unable to load alarms.");
+        }
+
+        document.getElementById("critical").textContent =
+            result.kpis.critical;
+
+        document.getElementById("major").textContent =
+            result.kpis.major;
+
+        document.getElementById("minor").textContent =
+            result.kpis.minor;
+
+        document.getElementById("total").textContent =
+            result.kpis.total;
+
+        renderTable(result.data);
+        renderChart(result.severity_distribution);
+
+    } catch (error) {
+
+        document.getElementById("alarmError").innerHTML =
+            '<div class="error">' +
+            escapeHtml(error.message) +
+            '</div>';
+
+        document.getElementById("tableHead").innerHTML = "";
+        document.getElementById("tableBody").innerHTML = "";
+    }
+}
+
+
+function renderTable(data) {
+
+    const head = document.getElementById("tableHead");
+    const body = document.getElementById("tableBody");
+
+    head.innerHTML = "";
+    body.innerHTML = "";
+
+    if (!data || data.length === 0) {
+
+        body.innerHTML =
+            '<tr><td colspan="100%">No alarms found.</td></tr>';
+
+        return;
+    }
+
+    const columns = Object.keys(data[0]);
+
+    const headerRow = document.createElement("tr");
+
+    columns.forEach(column => {
+
+        const th = document.createElement("th");
+        th.textContent = column;
+
+        headerRow.appendChild(th);
+    });
+
+    head.appendChild(headerRow);
+
+
+    data.forEach(row => {
+
+        const tr = document.createElement("tr");
+
+        columns.forEach(column => {
+
+            const td = document.createElement("td");
+
+            td.textContent =
+                row[column] === null ||
+                row[column] === undefined
+                ? ""
+                : row[column];
+
+            tr.appendChild(td);
+        });
+
+        body.appendChild(tr);
+    });
+}
+
+
+function renderChart(distribution) {
+
+    const labels = Object.keys(distribution);
+    const values = Object.values(distribution);
+
+    const trace = {
+        x: labels,
+        y: values,
+        type: "bar",
+        text: values,
+        textposition: "auto"
+    };
+
+    const layout = {
+        responsive: true,
+        margin: {
+            t: 20,
+            r: 20,
+            b: 50,
+            l: 55
+        },
+        xaxis: {
+            title: "Severity"
+        },
+        yaxis: {
+            title: "Number of Alarms"
+        }
+    };
+
+    Plotly.newPlot(
+        "severityChart",
+        [trace],
+        layout,
+        {
+            responsive: true,
+            displayModeBar: false
+        }
+    );
+}
+
+
+async function askSOP() {
+
+    const question =
+        document.getElementById("question").value.trim();
+
+    if (!question) {
+
+        showError(
+            "sopResult",
+            "Please enter a question."
+        );
+
+        return;
+    }
+
+    const button =
+        document.getElementById("sopButton");
+
+    button.disabled = true;
+
+    document.getElementById("sopLoading").style.display =
+        "block";
+
+    document.getElementById("sopResult").innerHTML = "";
+
+
+    try {
+
+        const response = await fetch(
+            "/api/sop",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+
+                body: JSON.stringify({
+                    question: question
+                })
+            }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                result.error ||
+                "Unable to get SOP answer."
+            );
+        }
+
+        document.getElementById("sopResult").innerHTML =
+            '<div class="answer">' +
+            escapeHtml(result.answer) +
+            '</div>';
+
+    } catch (error) {
+
+        showError(
+            "sopResult",
+            error.message
+        );
+
+    } finally {
+
+        button.disabled = false;
+
+        document.getElementById("sopLoading").style.display =
+            "none";
+    }
+}
+
+
+async function analyzeRootCause() {
+
+    const severity =
+        document.getElementById("severity").value;
+
+    const button =
+        document.getElementById("rcaButton");
+
+    button.disabled = true;
+
+    document.getElementById("rcaLoading").style.display =
+        "block";
+
+    document.getElementById("rcaResult").innerHTML = "";
+
+
+    try {
+
+        const response = await fetch(
+            "/api/root-cause",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+
+                body: JSON.stringify({
+                    severity: severity
+                })
+            }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                result.error ||
+                "Unable to perform root cause analysis."
+            );
+        }
+
+        document.getElementById("rcaResult").innerHTML =
+            '<div class="answer">' +
+            escapeHtml(result.result) +
+            '</div>';
+
+    } catch (error) {
+
+        showError(
+            "rcaResult",
+            error.message
+        );
+
+    } finally {
+
+        button.disabled = false;
+
+        document.getElementById("rcaLoading").style.display =
+            "none";
+    }
+}
+
+
+function showError(elementId, message) {
+
+    document.getElementById(elementId).innerHTML =
+        '<div class="error">' +
+        escapeHtml(message) +
+        '</div>';
+}
+
+
+function escapeHtml(value) {
+
+    const div =
+        document.createElement("div");
+
+    div.textContent =
+        value === null ||
+        value === undefined
+        ? ""
+        : String(value);
+
+    return div.innerHTML;
+}
+
+
+// Load dashboard when page opens
+document.addEventListener(
+    "DOMContentLoaded",
+    loadAlarms
+);
+
+</script>
+
+</body>
+</html>

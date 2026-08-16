@@ -1,0 +1,8 @@
+Incident_ID,Alarm,Root_Cause,Resolution
+INC001,Diameter Peer Down,PCRF CPU Overload,Restart Diameter Service
+INC002,Charging Failure,OCS Database Issue,Restart OCS
+INC003,CPU Usage High,Memory Leak,Restart JVM
+INC004,SCTP Link Down,Firewall Block,Open Firewall Port
+INC005,Packet Loss High,Network Congestion,Reroute Traffic
+INC006,API Timeout,Database Latency,Restart Database
+INC007,Service Down,Application Crash,Restart Application

@@ -1,0 +1,16 @@
+Alarm_ID,Severity,Node,Description,Time,Status
+1001,Critical,PCRF01,CPU Usage High,10:12,Open
+1002,Major,OCS01,Diameter Peer Down,10:13,Open
+1003,Minor,MSC01,Disk Usage 82%,10:15,Open
+1004,Critical,HSS01,Database Connection Lost,10:17,Open
+1005,Major,SGSN01,Memory Usage High,10:18,Open
+1006,Minor,NodeB21,Temperature Warning,10:20,Open
+1007,Critical,MME01,Service Down,10:22,Open
+1008,Major,PCRF02,Session Failure,10:23,Open
+1009,Minor,HLR01,Backup Delayed,10:25,Open
+1010,Critical,OCS02,Charging Failure,10:30,Open
+1011,Major,DRA01,SCTP Link Down,10:32,Open
+1012,Minor,NodeB45,Fan Speed Low,10:35,Open
+1013,Critical,SMF01,API Timeout,10:40,Open
+1014,Major,UPF01,Packet Loss High,10:43,Open
+1015,Minor,AMF01,Disk Usage 76%,10:45,Open
