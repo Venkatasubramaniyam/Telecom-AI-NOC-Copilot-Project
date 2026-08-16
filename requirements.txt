@@ -9,4 +9,3 @@ langchain-openai
 openai
 python-dotenv
 pypdf
-Dictionary_loader
