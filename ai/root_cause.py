@@ -1,44 +1,48 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from rag.chatbot import retriever, llm
+# RCA uses the LLM directly.
+# RAG/SOP retrieval remains available through the separate AI Telecom
+# Assistant (/api/sop), but is intentionally not called here because
+# OpenAI embeddings + Chroma retrieval was causing the Render request
+# to take too long.
+from rag.chatbot import llm
 
 
-MAX_ALARMS = 30
-MAX_HISTORY = 30
-MAX_CONTEXT_DOCS = 5
-MAX_CONTEXT_CHARS = 12000
-MAX_HISTORY_CHARS = 8000
-MAX_ALARM_CHARS = 8000
+MAX_ALARMS = 10
+MAX_HISTORY = 10
+MAX_ALARM_CHARS = 4000
+MAX_HISTORY_CHARS = 4000
 
 
 prompt = ChatPromptTemplate.from_template(
     """
 You are an experienced Telecom NOC Engineer.
 
-Analyze the supplied information and provide:
+Analyze the current alarms and historical incidents.
 
-- Most likely root cause
-- Confidence (%)
-- Impact
-- Recommended actions
+Provide a concise response with exactly these sections:
 
-Be concise and practical.
-Use only the supplied alarm, historical incident, and SOP information.
-Do not invent facts. If evidence is insufficient, say so.
+Most likely root cause:
+Confidence:
+Impact:
+Recommended actions:
+
+Use only the supplied information.
+Do not invent alarm details or historical facts.
+If the evidence is insufficient, clearly say so.
 
 Current Alarms:
 {alarms}
 
 Historical Incidents:
 {history}
-
-SOP Context:
-{context}
 """
 )
 
 parser = StrOutputParser()
+
+# Create the chain once when the application starts.
 chain = prompt | llm | parser
 
 
@@ -50,6 +54,14 @@ def _limit_text(text, max_chars):
 
 
 def analyze_root_cause(alarm_df, incident_df):
+    """
+    Fast RCA path for Render.
+
+    Only a small number of alarm/history rows are sent to the LLM.
+    This avoids the additional OpenAI Embeddings + Chroma network call
+    that was causing long waits and Gunicorn worker timeouts.
+    """
+
     alarm_sample = alarm_df.head(MAX_ALARMS)
     history_sample = incident_df.head(MAX_HISTORY)
 
@@ -63,32 +75,9 @@ def analyze_root_cause(alarm_df, incident_df):
         MAX_HISTORY_CHARS,
     )
 
-    docs = retriever.invoke(_limit_text(alarm_text, 5000))
-
-    context_parts = []
-    total_chars = 0
-
-    for doc in docs[:MAX_CONTEXT_DOCS]:
-        page = str(getattr(doc, "page_content", "") or "").strip()
-
-        if not page:
-            continue
-
-        remaining = MAX_CONTEXT_CHARS - total_chars
-        if remaining <= 0:
-            break
-
-        page = page[:remaining]
-        context_parts.append(page)
-        total_chars += len(page)
-
-    context = "\n\n".join(context_parts)
-
-    if not context:
-        context = "No relevant SOP context was retrieved."
-
-    return chain.invoke({
-        "alarms": alarm_text,
-        "history": history_text,
-        "context": context,
-    })
+    return chain.invoke(
+        {
+            "alarms": alarm_text,
+            "history": history_text,
+        }
+    )
