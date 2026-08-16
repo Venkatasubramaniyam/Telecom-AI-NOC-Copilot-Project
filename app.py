@@ -8,17 +8,22 @@ from ai.root_cause import analyze_root_cause
 
 app = Flask(__name__)
 
-# Load data when Flask starts
+
+# Load data once when Flask starts.
 try:
     alarm_df = load_alarm_data()
+    print("Alarm data loaded successfully.")
 except Exception as e:
     print(f"ERROR loading alarm data: {e}")
+    traceback.print_exc()
     alarm_df = None
 
 try:
     incident_df = load_incident_data()
+    print("Incident data loaded successfully.")
 except Exception as e:
     print(f"ERROR loading incident data: {e}")
+    traceback.print_exc()
     incident_df = None
 
 
@@ -29,19 +34,19 @@ def index():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "healthy"})
+    return jsonify({"status": "healthy"}), 200
 
 
 @app.route("/api/alarms", methods=["GET"])
 def get_alarms():
     if alarm_df is None:
         return jsonify({
-            "error": "Alarm data could not be loaded. Check utils/load_data.py and the data file."
+            "error": "Alarm data could not be loaded."
         }), 500
 
     severity = request.args.get("severity", "All")
 
-    if severity == "All":
+    if severity.lower() == "all":
         filtered_df = alarm_df.copy()
     else:
         filtered_df = alarm_df[
@@ -49,7 +54,6 @@ def get_alarms():
             == severity.strip().lower()
         ].copy()
 
-    # Convert NaN/NaT values to JSON-safe None
     filtered_df = filtered_df.where(filtered_df.notna(), None)
 
     records = filtered_df.to_dict(orient="records")
@@ -62,23 +66,19 @@ def get_alarms():
         .to_dict()
     )
 
+    severity_values = alarm_df["Severity"].astype(str).str.strip().str.lower()
+
     kpis = {
-        "critical": int(
-            alarm_df["Severity"].astype(str).str.strip().str.lower().eq("critical").sum()
-        ),
-        "major": int(
-            alarm_df["Severity"].astype(str).str.strip().str.lower().eq("major").sum()
-        ),
-        "minor": int(
-            alarm_df["Severity"].astype(str).str.strip().str.lower().eq("minor").sum()
-        ),
-        "total": int(len(alarm_df))
+        "critical": int(severity_values.eq("critical").sum()),
+        "major": int(severity_values.eq("major").sum()),
+        "minor": int(severity_values.eq("minor").sum()),
+        "total": int(len(alarm_df)),
     }
 
     return jsonify({
         "data": records,
         "kpis": kpis,
-        "severity_distribution": distribution
+        "severity_distribution": distribution,
     })
 
 
@@ -92,13 +92,15 @@ def sop():
 
     try:
         answer = ask_question(question)
-        return jsonify({"answer": str(answer)})
+        return jsonify({"answer": str(answer)}), 200
+
     except Exception as e:
         print("SOP ERROR:")
         traceback.print_exc()
+
         return jsonify({
             "error": "Unable to process the SOP question.",
-            "details": str(e)
+            "details": str(e),
         }), 500
 
 
@@ -127,24 +129,45 @@ def root_cause():
         }), 400
 
     try:
+        print(
+            f"ROOT CAUSE START: alarms={len(filtered_df)}, "
+            f"history={len(incident_df)}, severity={severity}"
+        )
+
         result = analyze_root_cause(filtered_df, incident_df)
-        return jsonify({"result": str(result)})
+
+        print("ROOT CAUSE SUCCESS")
+
+        return jsonify({
+            "result": str(result)
+        }), 200
+
     except Exception as e:
         print("ROOT CAUSE ERROR:")
         traceback.print_exc()
+
         return jsonify({
             "error": "Unable to perform root cause analysis.",
-            "details": str(e)
+            "details": str(e),
         }), 500
 
 
+@app.errorhandler(500)
+def handle_500(error):
+    print("FLASK 500 ERROR:")
+    traceback.print_exc()
+
+    return jsonify({
+        "error": "Internal server error.",
+        "details": str(error),
+    }), 500
+
+
 if __name__ == "__main__":
-    # Render provides the PORT environment variable.
-    # Local development falls back to port 5000.
     port = int(os.environ.get("PORT", 5000))
 
     app.run(
         host="0.0.0.0",
         port=port,
-        debug=False
+        debug=False,
     )
